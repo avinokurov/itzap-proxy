@@ -10,7 +10,7 @@ ObjectBuilder builder = ObjectBuilder.builder()
        .setVersionInfo(newVersionInfo("myLib", "2.0"))
        .build();
 builder.call("objectMethod");
-
+```
 2. Create object from factory method and pass "string param" and 1 to it:
 ```java
 ObjectBuilder builder = ObjectBuilder.builder()
