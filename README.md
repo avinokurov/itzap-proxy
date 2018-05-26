@@ -28,6 +28,7 @@ InvocationHandler handler = new InvocationHandler() {
 
 ObjectBuilder builder = ObjectBuilder.builder()
    .setInterfaceName("org.mypackage.myclass")
+   .setVersionInfo(newVersionInfo("myLib", "2.0"))
    .setHandler(handler)
    .build();
 ```   
