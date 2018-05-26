@@ -65,4 +65,14 @@ ObjectBuilder builder = ObjectBuilder.builder()
 descriptors.add(MethodDesriptor.method("setProperty", "property name", "value"));
 ProxyCallerInterface object = builder.build();
 ```
-       
+7. Calling static methods
+```java
+List<MethodDesriptor> settings = Lists.newArrayList();
+ObjectBuilder builder = ObjectBuilder.from(builder)
+                .setClassName("org.MyUtils")
+                .setStaticObject(true)
+                .setDescriptors(settings);
+                
+settings.add(MethodDesriptor.method("convert", "from this string"));
+builder.build();
+ 
