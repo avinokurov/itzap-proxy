@@ -20,4 +20,14 @@ ObjectBuilder builder = ObjectBuilder.builder()
        .setFactoryMethod("initMyClass")
        .setParams("string param", 1)
        .build();
-       
+```
+3. Object builder can implement proxy interface:
+```java
+InvocationHandler handler = new InvocationHandler() {
+};
+
+ObjectBuilder builder = ObjectBuilder.builder()
+   .setInterfaceName("org.mypackage.myclass")
+   .setHandler(handler)
+   .build();
+```   
