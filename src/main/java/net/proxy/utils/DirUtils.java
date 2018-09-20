@@ -1,29 +1,19 @@
-package org.integration.proxy.utils;
+package net.proxy.utils;
 
-import org.apache.commons.io.FileUtils;
+import com.google.common.base.Predicate;
+import com.google.common.base.Splitter;
+import com.google.common.collect.FluentIterable;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 
 import java.io.File;
-import java.io.IOException;
+import java.util.regex.Pattern;
 
-public final class LibUtils {
-    public static final String APPEND_LIB_LOG = "lib.append.log";
+public final class DirUtils {
+    private static final Pattern VERSION_SPLITTER = Pattern.compile("\\.|\\-");
 
-    private LibUtils() {}
-
-    public static void forceMkdir(File file) throws IOException {
-        if (FilenameUtils.getExtension(file.getName()).isEmpty()) {
-            FileUtils.forceMkdir(file);
-        } else {
-            FileUtils.forceMkdir(file.getParentFile());
-        }
-    }
-
-    public static void forceMkdir(File file, boolean force) throws IOException {
-        FileUtils.forceMkdir(file);
-    }
+    private DirUtils() {}
 
     public static boolean isDirectory(File file) {
         if (file == null) {
@@ -32,6 +22,24 @@ public final class LibUtils {
 
         if (file.exists()) {
             return file.isDirectory();
+        }
+
+        boolean isVersion = FluentIterable.from(Splitter.on(VERSION_SPLITTER)
+                .split(file.getName()))
+                .limit(3)
+                .allMatch(new Predicate<String>() {
+                    @Override
+                    public boolean apply(String input) {
+                        return NumberUtils.isDigits(input);
+                    }
+                });
+        if (isVersion) {
+            return true;
+        }
+
+        if (StringUtils.isBlank(FilenameUtils.getBaseName(file.getName()))) {
+            // special folders that starts with period like .ssh
+            return true;
         }
 
         return FilenameUtils.getExtension(file.getName()).isEmpty();

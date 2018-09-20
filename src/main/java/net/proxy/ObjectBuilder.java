@@ -1,22 +1,18 @@
-package org.integration.proxy;
+package net.proxy;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
-import org.apache.commons.io.FileUtils;
+import net.proxy.model.ArtifactInterface;
+import net.proxy.utils.LibLoader;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.integration.proxy.utils.LibLoader;
-import org.integration.proxy.utils.jar.ArtifactInterface;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.net.URLClassLoader;
@@ -24,11 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import static org.integration.proxy.ProxyUtils.UNKNOWN_VERSION;
-import static org.integration.proxy.ProxyUtils.newProxy;
-import static org.integration.proxy.ProxyUtils.unwrapObjects;
-import static org.integration.proxy.utils.jar.JarUtils.getJarFile;
-import static org.integration.proxy.utils.jar.JarUtils.isRunningJar;
+import static net.proxy.ProxyUtils.newProxy;
 
 public class ObjectBuilder implements ProxyVersionedInterface {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectBuilder.class);
@@ -36,7 +28,6 @@ public class ObjectBuilder implements ProxyVersionedInterface {
     private String packageName;
     private String className;
     private ProxyUtils.ProxyObject[] params;
-    private ProxyVersionedInterface versionInfo;
     private String factoryMethod;
     private List<MethodDesriptor> descriptors;
     private List<MethodDesriptor.Result> descriptorResults;
@@ -44,9 +35,6 @@ public class ObjectBuilder implements ProxyVersionedInterface {
     private String interfaceName;
     private InvocationHandler handler;
     private Map<String, MethodDesriptor.Result> data = ImmutableMap.of();
-    private List<String> additionalClasses;
-    private boolean useSystemLoader;
-    private String libRoot;
     private boolean pushClassloader;
     private ArtifactInterface artifact;
 
@@ -59,20 +47,12 @@ public class ObjectBuilder implements ProxyVersionedInterface {
 
     public static ObjectBuilder from(ObjectBuilder builder) {
         return new ObjectBuilder()
-                .setVersionInfo(builder.versionInfo)
+                .setArtifact(builder.artifact)
                 .setPackageName(builder.packageName)
                 .setClassName(builder.className)
                 .setInterfaceName(builder.interfaceName)
                 .setFactoryMethod(builder.factoryMethod)
-                .setHandler(builder.handler)
-                .setAdditionalClasses(builder.additionalClasses)
-                .setArtifact(builder.artifact);
-    }
-
-    public static ObjectBuilder from(ProxyVersionedInterface proxy) {
-        return new ObjectBuilder()
-                .setVersionInfo(proxy)
-                .setClassName(proxy.getName());
+                .setHandler(builder.handler);
     }
 
     public ObjectBuilder setClassName(String className) {
@@ -86,23 +66,18 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         return this;
     }
 
-    public ObjectBuilder setArtifact(ArtifactInterface artifact) {
-        this.artifact = artifact;
-        return this;
-    }
-
     public ObjectBuilder setPushClassloader(boolean pushClassloader) {
         this.pushClassloader = pushClassloader;
         return this;
     }
 
     public ObjectBuilder setParams(Object ... params) {
-        this.params = unwrapObjects(params);
+        this.params = ProxyUtils.unwrapObjects(params);
         return this;
     }
 
-    public ObjectBuilder setUseSystemLoader(boolean useSystemLoader) {
-        this.useSystemLoader = useSystemLoader;
+    public ObjectBuilder setArtifact(ArtifactInterface artifact) {
+        this.artifact = artifact;
         return this;
     }
 
@@ -121,23 +96,8 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         return this;
     }
 
-    public ObjectBuilder setLibRoot(String libRoot) {
-        this.libRoot = libRoot;
-        return this;
-    }
-
     public ObjectBuilder setFactoryMethod(String factoryMethod) {
         this.factoryMethod = factoryMethod;
-        return this;
-    }
-
-    public ObjectBuilder setVersionInfo(ProxyVersionedInterface versionInfo) {
-        this.versionInfo = versionInfo;
-        return this;
-    }
-
-    public ObjectBuilder setAdditionalClasses(List<String> additionalClasses) {
-        this.additionalClasses = additionalClasses;
         return this;
     }
 
@@ -168,10 +128,15 @@ public class ObjectBuilder implements ProxyVersionedInterface {
                     return (MethodDesriptor.Result) value;
                 }
 
-                return new MethodDesriptor.Result(MethodDesriptor.method(key), value, getVersionInfo());
+                return new MethodDesriptor.Result(new CachedMethod(value, value.getClass(),
+                        null, MethodDesriptor.method(key), artifact), value);
             }
         });
         return this;
+    }
+
+    public ArtifactInterface getArtifact() {
+        return artifact;
     }
 
     public Class loadClass() {
@@ -180,8 +145,8 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         LOGGER.debug("Loading enum {}", clazzName);
 
         try {
-            return getClassLoader(this.artifact).loadClass(clazzName);
-        } catch (ClassNotFoundException e) {
+            return getClassLoader().loadClass(clazzName);
+        } catch (Exception e) {
             throw new ProxyException(this, e);
         }
     }
@@ -205,16 +170,16 @@ public class ObjectBuilder implements ProxyVersionedInterface {
                     target = buildFromFactoryMethod(targetClass);
                 } else if (ArrayUtils.isEmpty(params)) {
                     LOGGER.debug("Calling empty constructor for class  {}", targetClass.getName());
-                    target = new ProxyCaller(newProxy(targetClass), getVersionInfo(), this.data);
+                    target = new ProxyCaller(ProxyUtils.newProxy(targetClass), this.artifact, this.data);
                 } else {
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("Calling constructor for class  {} with params {}",
                                 targetClass.getName(), Joiner.on(',').join(params));
                     }
-                    target = new ProxyCaller(newProxy(targetClass, params), getVersionInfo(), this.data);
+                    target = new ProxyCaller(newProxy(targetClass, params), this.artifact, this.data);
                 }
             } else {
-                target = new ProxyStaticCaller(targetClass, getVersionInfo(), this.data);
+                target = new ProxyStaticCaller(targetClass, this.artifact, this.data);
             }
         } catch (ClassNotFoundException e) {
             throw new ProxyException(this, e);
@@ -237,8 +202,8 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         }
         LOGGER.debug("Build proxy interface  {}", targetClass.getName());
 
-        return new ProxyCaller(newProxy(Proxy.newProxyInstance(getClassLoader(this.artifact),
-                new Class[] {targetClass}, this.handler), targetClass), getVersionInfo(), this.data);
+        return new ProxyCaller(ProxyUtils.newProxy(Proxy.newProxyInstance(getClassLoader(),
+                new Class[] {targetClass}, this.handler), targetClass), this.artifact, this.data);
     }
 
     private ProxyCallerInterface setup(final ProxyCallerInterface target, final Class<?> targetClass) {
@@ -274,7 +239,7 @@ public class ObjectBuilder implements ProxyVersionedInterface {
                 targetClass.getName(), this.factoryMethod);
 
         return new ProxyCaller(newProxy(targetClass, this.factoryMethod, this.params),
-                this.getVersionInfo());
+                this.artifact);
     }
 
     @SuppressWarnings("unchecked")
@@ -282,7 +247,8 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         Class<?> typeClass = loadClass();
         Map<String, ProxyEnum> srcType = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         for (Object type : typeClass.getEnumConstants()) {
-            ProxyEnum proxyEnum = new ProxyEnum(newProxy(type, typeClass), getVersionInfo());
+            ProxyEnum proxyEnum = new ProxyEnum(ProxyUtils.newProxy(type, typeClass),
+                    this.artifact);
             srcType.put(proxyEnum.name(), proxyEnum);
         }
         return srcType;
@@ -295,32 +261,43 @@ public class ObjectBuilder implements ProxyVersionedInterface {
 
     @Override
     public String getLabel() {
-        return this.versionInfo.getLabel();
+        return this.artifact.getVersion().getLabel();
     }
 
     @Override
     public String getVersion() {
-        return this.versionInfo.getVersion();
+        return this.artifact.getVersion().getVersion();
     }
 
     @Override
     public String getPath() {
-        return this.versionInfo.getPath();
+        return this.artifact.getVersion().getPath();
     }
 
-    private URLClassLoader getClassLoader(ArtifactInterface artifact) {
+    @Override
+    public File getDir() {
+        return this.artifact.getVersion().getDir();
+    }
+
+    private URLClassLoader getClassLoader() {
         String clazzName = resolveClassName();
 
-        if (this.versionInfo == null || this.versionInfo == UNKNOWN_VERSION) {
+        if (this.artifact == null ||
+                this.artifact.getVersion() == null ||
+                this.artifact.getVersion() == ProxyUtils.UNKNOWN_VERSION) {
             throw new ProxyException(this, "Lib version info cannot be null or unknown");
         }
         if (StringUtils.isBlank(clazzName)) {
             throw new ProxyException(this, "Class name cannot be blank");
         }
-
         boolean contains = LibLoader.containsLoader(artifact.getName());
 
         URLClassLoader classLoader = LibLoader.getLibClassLoader(artifact);
+
+        if (classLoader == null) {
+            throw new ProxyException(this, String.format("Failed to find class loader for artifact %s",
+                    artifact.toString()));
+        }
 
         if (!contains) {
             LOGGER.info("Loading from {}",
@@ -328,48 +305,6 @@ public class ObjectBuilder implements ProxyVersionedInterface {
         }
 
         return classLoader;
-    }
-
-    class LibPredicate implements Predicate<String> {
-        private final Predicate<String> defaultPredicate;
-
-        LibPredicate(Predicate<String> defaultPredicate) {
-            this.defaultPredicate = defaultPredicate;
-        }
-
-        @Override
-        public boolean apply(String input) {
-            if (input == null) {
-                return false;
-            }
-
-            String jarName = getJarFile(ObjectBuilder.this.getClass());
-            if (StringUtils.isBlank(jarName) || !isRunningJar()) {
-                LOGGER.debug("Running in dev mode.");
-                return this.defaultPredicate.apply(input);
-            }
-
-            File jarFile = new File(jarName);
-            File lib = new File(input);
-            boolean isFileNewer = FileUtils.isFileNewer(lib, jarFile);
-            LOGGER.debug("Testing lib {} against main jar {} to see if it is newer {}",
-                    lib, jarFile, BooleanUtils.toStringTrueFalse(isFileNewer));
-            if (!isFileNewer) {
-                LOGGER.warn("Newer test failed. Current lib {} will be updated from the jar {}",
-                        input, jarName);
-                try {
-                    FileUtils.forceDelete(lib);
-                } catch (IOException e) {
-                    LOGGER.error("Failed to cleanup old lib {}. Please delete manually",
-                            lib, e);
-                    throw new ProxyException(ObjectBuilder.this,
-                            String.format("Failed to update lib %s from jar %s. Delete of old lib cased error. Please delete manually",
-                                    lib, jarName), e);
-                }
-                return false;
-            }
-            return this.defaultPredicate.apply(input);
-        }
     }
 
     private String resolveClassName() {
@@ -385,6 +320,6 @@ public class ObjectBuilder implements ProxyVersionedInterface {
     }
 
     public ProxyVersionedInterface getVersionInfo() {
-        return this.versionInfo;
+        return this.artifact.getVersion();
     }
 }

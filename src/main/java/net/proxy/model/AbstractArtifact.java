@@ -1,48 +1,76 @@
-package org.integration.proxy.utils.jar;
+package net.proxy.model;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import org.apache.commons.io.FilenameUtils;
+import com.google.common.collect.ImmutableSet;
+import net.proxy.ProxyVersionedInterface;
 
 import java.io.File;
 import java.net.URL;
 import java.util.List;
+import java.util.Set;
 
-import static org.integration.proxy.utils.LibLoader.jarPredicate;
-import static org.integration.proxy.utils.jar.JarUtils.isRunningJar;
+import static net.proxy.ProxyUtils.UNKNOWN_VALUE;
+import static net.proxy.ProxyUtils.UNKNOWN_VERSION;
 
 public abstract class AbstractArtifact implements ArtifactInterface {
+    public static final ArtifactInterface UKNOWN_ARTIFACT = new AbstractArtifact("/",
+            UNKNOWN_VALUE,
+            ImmutableSet.of(),
+            AbstractArtifact.class,
+    null,
+    null,
+            UNKNOWN_VERSION) {
+        @Override
+        public SourceType getSourceType() {
+            return SourceType.UNKNOWN;
+        }
+
+        @Override
+        public LibCallback getCallback() {
+            return null;
+        }
+
+        @Override
+        public List<URL> load() {
+            return ImmutableList.of();
+        }
+
+        @Override
+        public ArtifactInterface fromVersion(ProxyVersionedInterface version) {
+            return this;
+        }
+
+        @Override
+        public String getLabel() {
+            return this.getVersion().getLabel();
+        }
+    };
+
     private final String root;
     private final String name;
-    private final String extension;
-    private final Class<?> clazz;
+    private final Set<String> extensions;
+    protected final Class<?> clazz;
     private final File destination;
-    private final Predicate<String> predicate;
+    protected final Predicate<String> predicate;
+    private final ProxyVersionedInterface versionInfo;
 
-    protected AbstractArtifact(String fname, Class<?> clazz, File destination) {
-        this(FilenameUtils.getPath(fname),
-                FilenameUtils.getBaseName(fname), FilenameUtils.getExtension(fname),
-                clazz, destination, jarPredicate(FilenameUtils.getPath(fname),
-                        FilenameUtils.getBaseName(fname)));
-    }
-
-    protected AbstractArtifact(String root, String name, Class<?> clazz, File destination) {
-        this(root, name, "", clazz, destination, jarPredicate(root, name));
-    }
-
-    protected AbstractArtifact(String root,
+    public AbstractArtifact(String root,
                             String name,
-                            String extension,
+                            Set<String> extensions,
                             Class<?> clazz,
                             File destination,
-                            Predicate<String> predicate) {
+                            Predicate<String> predicate,
+                            ProxyVersionedInterface versionInfo) {
         this.root = root;
         this.name = name;
-        this.extension = extension;
+        this.extensions = extensions;
         this.clazz = clazz;
         this.destination = destination;
         this.predicate = predicate;
+        this.versionInfo = versionInfo;
     }
 
     @Override
@@ -78,13 +106,18 @@ public abstract class AbstractArtifact implements ArtifactInterface {
     }
 
     @Override
-    public String getExtension() {
-        return extension;
+    public Set<String> getExtensions() {
+        return extensions;
     }
 
     @Override
     public File getDestination(String from) {
         return destination;
+    }
+
+    @Override
+    public boolean hasFallback() {
+        return false;
     }
 
     @Override
@@ -102,20 +135,10 @@ public abstract class AbstractArtifact implements ArtifactInterface {
         return MoreObjects.toStringHelper(this)
                 .add("root", root)
                 .add("name", name)
-                .add("extension", extension)
+                .add("extension", Joiner.on(',').join(extensions))
                 .add("destination", destination.getAbsolutePath())
                 .add("sourceType", this.getSourceType())
                 .toString();
-    }
-
-    @Override
-    public SourceType getSourceType() {
-
-        if (isRunningJar(this.predicate.getClass())) {
-            return SourceType.JAR;
-        }
-
-        return SourceType.DIR;
     }
 
     protected String getPath() {
@@ -135,5 +158,10 @@ public abstract class AbstractArtifact implements ArtifactInterface {
     @Override
     public boolean isUseSystemLoader() {
         return true;
+    }
+
+    @Override
+    public ProxyVersionedInterface getVersion() {
+        return this.versionInfo;
     }
 }

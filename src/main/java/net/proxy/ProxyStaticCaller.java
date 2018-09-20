@@ -1,19 +1,20 @@
-package org.integration.proxy;
+package net.proxy;
 
 import com.google.common.collect.ImmutableMap;
+import net.proxy.model.ArtifactInterface;
 
 import java.util.Map;
 
 public class ProxyStaticCaller extends AbstractCaller {
     public ProxyStaticCaller(Class clazz,
-                             ProxyVersionedInterface versionInfo) {
-        this(clazz, versionInfo, ImmutableMap.<String, MethodDesriptor.Result>of());
+                             ArtifactInterface artifact) {
+        this(clazz, artifact, ImmutableMap.<String, MethodDesriptor.Result>of());
     }
 
     public ProxyStaticCaller(Class clazz,
-                             ProxyVersionedInterface versionInfo,
+                             ArtifactInterface artifact,
                              Map<String, MethodDesriptor.Result> data) {
-        super(clazz, versionInfo, data);
+        super(clazz, artifact, data);
     }
 
     @Override

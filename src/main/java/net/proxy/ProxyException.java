@@ -1,4 +1,4 @@
-package org.integration.proxy;
+package net.proxy;
 
 import org.apache.commons.lang3.StringUtils;
 

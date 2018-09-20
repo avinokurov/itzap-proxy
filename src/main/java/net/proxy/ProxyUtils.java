@@ -1,8 +1,12 @@
-package org.integration.proxy;
+package net.proxy;
 
 import com.google.common.base.Function;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableSet;
+import net.proxy.model.AbstractArtifact;
+import net.proxy.model.ArtifactInterface;
+import net.proxy.model.DirArtifact;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.ClassUtils;
@@ -14,21 +18,22 @@ import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.JarURLConnection;
 import java.net.URL;
+import java.util.Set;
 
-import static org.integration.proxy.utils.LibUtils.getVersion;
-import static org.integration.proxy.utils.jar.JarUtils.getUrlFromClass;
-
+import static net.proxy.utils.DirUtils.getVersion;
+import static net.proxy.utils.LibLoader.jarPredicate;
 
 public final class ProxyUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProxyUtils.class);
-    private static final String UNKNOWN_VALUE = "unknown";
+    public static final String UNKNOWN_VALUE = "unknown";
+    public static final ProxyVersionedInterface UNKNOWN_VERSION;
 
-    static final ProxyVersionedInterface UNKNOWN_VERSION;
     public static ProxyObject NULL_OBJECT = new ProxyObject(null, Object.class);
 
     static {
-        UNKNOWN_VERSION = newVersionInfo(UNKNOWN_VALUE, UNKNOWN_VALUE);
+        UNKNOWN_VERSION = newVersionInfo(UNKNOWN_VALUE, UNKNOWN_VALUE, null);
     }
 
     private ProxyUtils() {}
@@ -82,13 +87,15 @@ public final class ProxyUtils {
     };
 
     public static ProxyVersionedInterface newVersionInfo(final String label,
-                                                                                 final String version) {
-        return newVersionInfo(label, version, UNKNOWN_VALUE);
+                                                         final String version,
+                                                         final File libDir) {
+        return newVersionInfo(label, version, libDir, UNKNOWN_VALUE);
     }
 
     public static ProxyVersionedInterface newVersionInfo(final String label,
-                                                                                 final String version,
-                                                                                 final String name) {
+                                                         final String version,
+                                                         final File libDir,
+                                                         final String name) {
         return new ProxyVersionedInterface() {
             @Override
             public String getVersion() {
@@ -98,6 +105,11 @@ public final class ProxyUtils {
             @Override
             public String getPath() {
                 return ProxyUtils.getPath(this);
+            }
+
+            @Override
+            public File getDir() {
+                return libDir;
             }
 
             @Override
@@ -228,11 +240,11 @@ public final class ProxyUtils {
         }
     }
 
-    public static ProxyCallerInterface takeFirst(Object[] args, ProxyVersionedInterface versionInfo) {
+    public static ProxyCallerInterface takeFirst(Object[] args, ArtifactInterface artifact) {
         if (ArrayUtils.isEmpty(args)) {
-            return new ProxyStaticCaller(null, versionInfo);
+            return new ProxyStaticCaller(null, artifact);
         } else {
-            return new ProxyCaller(newProxy(args[0]), versionInfo);
+            return new ProxyCaller(newProxy(args[0]), artifact);
         }
     }
 
@@ -241,47 +253,73 @@ public final class ProxyUtils {
                 method.getName().equalsIgnoreCase(name);
     }
 
-    public static ProxyVersionedInterface fromObject(final Object object) {
+    public static ArtifactInterface fromObject(final Object object) {
         if (object instanceof ProxyCallerInterface) {
-            return (ProxyCallerInterface)object;
+            return ((ProxyCallerInterface)object).getArtifact();
         } else if (object instanceof MethodDesriptor.Result) {
-            return ((MethodDesriptor.Result) object).asProxy();
+            return ((MethodDesriptor.Result) object).asProxy().getArtifact();
         } else if (object instanceof ProxyInterface) {
                 return versionFromObject(object);
         } else {
-            return UNKNOWN_VERSION;
+            return AbstractArtifact.UKNOWN_ARTIFACT;
         }
 
     }
 
-    public static ProxyVersionedInterface versionFromObject(final Object obj) {
+    public static ArtifactInterface versionFromObject(final Object obj) {
         if (obj == null) {
-            return UNKNOWN_VERSION;
+            return AbstractArtifact.UKNOWN_ARTIFACT;
         }
 
-        return versionFromClass(obj.getClass());
+        return artifactFromClass(obj.getClass());
     }
 
-    public static ProxyVersionedInterface versionFromClass(final Class clazz) {
+    public static ArtifactInterface artifactFromClass(final Class clazz) {
         final URL location = getUrlFromClass(clazz);
+
         try {
             if (location != null) {
                 final File jarFile = new File(location.toURI());
                 String ext = FilenameUtils.getExtension(jarFile.getAbsolutePath());
+                Set<String> extentions = ImmutableSet.of(ext);
                 if ("jar".equalsIgnoreCase(ext)) {
-                    return newVersionInfo(getVersion(jarFile.getParentFile().getParentFile()),
-                            getVersion(jarFile));
+                    File libFolder = libFolderFromPath(jarFile).getParentFile().getParentFile();
+
+                    ProxyVersionedInterface version = newVersionInfo(getVersion(jarFile.getParentFile().getParentFile()),
+                            getVersion(jarFile), libFolder);
+
+                    return new DirArtifact(extentions,
+                            clazz, jarPredicate(location.toURI().getPath(),
+                            libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
+                            version);
                 } else {
-                    return newVersionInfo(getVersion(jarFile.getParentFile()),
-                            getVersion(jarFile));
+                    File libFolder = libFolderFromPath(jarFile).getParentFile();
+
+                    ProxyVersionedInterface version = newVersionInfo(getVersion(jarFile.getParentFile()),
+                            getVersion(jarFile), libFolder);
+                    return new DirArtifact(extentions,
+                            clazz, jarPredicate(location.toURI().getPath(),
+                            libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
+                            version);
                 }
             } else {
-                return UNKNOWN_VERSION;
+                return AbstractArtifact.UKNOWN_ARTIFACT;
             }
         } catch (Exception e) {
             LOGGER.error("Could not get version info from class {}", clazz.getName(), e);
-            return UNKNOWN_VERSION;
+            return AbstractArtifact.UKNOWN_ARTIFACT;
         }
+    }
+
+    private static File libFolderFromPath(File path) {
+        String folder = getVersion(path);
+        File fromPath = path;
+
+        while(fromPath != null && !"lib".equalsIgnoreCase(folder)) {
+            fromPath = fromPath.getParentFile();
+            folder = getVersion(fromPath);
+        }
+        return fromPath == null ? path : fromPath;
     }
 
     public static String getPath(ProxyVersionedInterface versionInfo) {
@@ -321,30 +359,56 @@ public final class ProxyUtils {
             return UNKNOWN_VALUE;
         }
 
+        String path = "engine";
+
+        if (StringUtils.isNotBlank(versionInfo.getLabel())) {
+            path += ("/" + versionInfo.getLabel());
+        }
+
         if (StringUtils.isBlank(versionInfo.getVersion())) {
-            return normalizeToUnix("engine/" + versionInfo.getLabel());
+            return normalizeToUnix(path);
         }
 
         if (StringUtils.isBlank(versionInfo.getName()) ||
                 UNKNOWN_VALUE.equalsIgnoreCase(versionInfo.getName())) {
-            return normalizeToUnix("engine/" + versionInfo.getLabel() + "/" +
-                    versionInfo.getVersion() + "/");
+            return normalizeToUnix(path + "/" + versionInfo.getVersion() + "/");
         }
 
-        return normalizeToUnix("engine/" + versionInfo.getLabel() + "/" +
+        return normalizeToUnix(path + "/" +
                         versionInfo.getVersion() + "/" +
                         versionInfo.getName() + "/");
     }
 
-    public static String getVersionWithDefault(String version, String defaultVersion) {
-        if ("null".equalsIgnoreCase(version) || UNKNOWN_VALUE.equalsIgnoreCase(version)) {
-            version = defaultVersion;
+    public static String getS3Path(String path, String version) {
+        if (StringUtils.isBlank(path) ||
+                UNKNOWN_VALUE.equalsIgnoreCase(path)) {
+            return normalizeToUnix(version);
         }
 
-        return StringUtils.defaultIfBlank(version, defaultVersion);
+        return normalizeToUnix(path + "/" + version);
     }
 
     private static String normalizeToUnix(String path) {
         return FilenameUtils.separatorsToUnix(FilenameUtils.normalize(path));
+    }
+
+    public static URL getUrlFromClass(final Class clazz) {
+        if (clazz == null) {
+            return null;
+        }
+
+        final URL location = clazz.getResource('/' + clazz.getName().replace('.', '/') + ".class");
+        try {
+            if (location != null && "jar".equalsIgnoreCase(location.toURI().getScheme())) {
+                JarURLConnection connection = (JarURLConnection) location.openConnection();
+
+                return connection.getJarFileURL();
+            } else {
+                return null;
+            }
+        } catch (Exception e) {
+            LOGGER.error("Could not get jar URL info from class {}", clazz.getName(), e);
+            return null;
+        }
     }
 }
