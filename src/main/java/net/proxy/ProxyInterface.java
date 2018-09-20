@@ -1,10 +1,9 @@
-package org.integration.proxy;
+package net.proxy;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public interface ProxyInterface {
-
     Logger LOG = LoggerFactory.getLogger(ProxyInterface.class);
 
     abstract class Getter<T> {

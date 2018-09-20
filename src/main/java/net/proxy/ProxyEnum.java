@@ -1,8 +1,9 @@
-package org.integration.proxy;
+package net.proxy;
 
 import com.google.common.collect.ImmutableMap;
+import net.proxy.model.ArtifactInterface;
 
-import static org.integration.proxy.ProxyUtils.NULL_OBJECT;
+import static net.proxy.ProxyUtils.NULL_OBJECT;
 
 public class ProxyEnum extends ProxyCaller {
     public static ProxyEnum NULL_ENUM_PROXY = new ProxyEnum(NULL_OBJECT, null) {
@@ -12,8 +13,8 @@ public class ProxyEnum extends ProxyCaller {
         }
     };
 
-    public ProxyEnum(ProxyUtils.ProxyObject target, ProxyVersionedInterface vesionInfo) {
-        super(target, vesionInfo, ImmutableMap.<String, MethodDesriptor.Result>of());
+    public ProxyEnum(ProxyUtils.ProxyObject target, ArtifactInterface artifact) {
+        super(target, artifact, ImmutableMap.<String, MethodDesriptor.Result>of());
     }
 
     public String name() {

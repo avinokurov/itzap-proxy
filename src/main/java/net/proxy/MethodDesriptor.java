@@ -1,13 +1,10 @@
-package org.integration.proxy;
+package net.proxy;
 
-import com.google.common.base.Function;
-import com.google.common.base.Joiner;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
+import com.google.common.base.*;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import net.proxy.model.ArtifactInterface;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -15,12 +12,8 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static org.integration.proxy.ProxyUtils.fromObject;
-import static org.integration.proxy.ProxyUtils.getClasses;
-import static org.integration.proxy.ProxyUtils.unwrapObject;
-import static org.integration.proxy.ProxyUtils.unwrapObjects;
-import static org.integration.proxy.ProxyUtils.versionFromObject;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class MethodDesriptor implements ProxyInterface {
     private final String name;
@@ -31,9 +24,9 @@ public class MethodDesriptor implements ProxyInterface {
 
     private MethodDesriptor(String name, Object ... params) {
         this.name = name;
-        this.params = unwrapObjects(params);
+        this.params = ProxyUtils.unwrapObjects(params);
         this.is_static = false;
-        this.signature = getClasses(params);
+        this.signature = ProxyUtils.getClasses(params);
         this.pushClassLoader = false;
     }
 
@@ -65,14 +58,12 @@ public class MethodDesriptor implements ProxyInterface {
         return Joiner.on('/')
                 .join(name, Joiner.on('/')
                         .skipNulls()
-                        .join(FluentIterable.of(params)
-                                .transform(new Function<Class, String>() {
-                                               @Override
-                                               public String apply(Class input) {
-                                                   return input == null ? null : input.getName();
-                                               }
-                                           }
-                                )
+                        .join(Stream.of(params).map(new java.util.function.Function<Class, String>() {
+                                    @Override
+                                    public String apply(Class input) {
+                                        return input == null ? null : input.getName();
+                                    }
+                                }).collect(Collectors.toList())
                         )
                 );
     }
@@ -114,7 +105,7 @@ public class MethodDesriptor implements ProxyInterface {
         }
 
         public Builder setParams(Object ... params) {
-            this.params = unwrapObjects(params);
+            this.params = ProxyUtils.unwrapObjects(params);
             return this;
         }
 
@@ -140,7 +131,7 @@ public class MethodDesriptor implements ProxyInterface {
 
         public MethodDesriptor build() {
             if (ArrayUtils.isEmpty(this.signature)) {
-                this.signature = getClasses(this.params);
+                this.signature = ProxyUtils.getClasses(this.params);
             }
             Preconditions.checkNotNull(this.name, "Method name cannot be null");
 
@@ -149,47 +140,56 @@ public class MethodDesriptor implements ProxyInterface {
     }
 
     public static class Result implements ProxyVersionedInterface {
-        private final MethodDesriptor desriptor;
+        private final CachedMethod method;
         private final Object result;
-        private final ProxyVersionedInterface versionInfo;
+        private final ArtifactInterface artifact;
 
-        public Result(MethodDesriptor desriptor, Object result) {
-            this(desriptor, result, result == null ? null : versionFromObject(result));
-        }
-
-        Result(MethodDesriptor desriptor, Object result, ProxyVersionedInterface versionInfo) {
-            this.desriptor = desriptor;
+        Result(CachedMethod method, Object result) {
+            this.method = method;
             this.result = result;
-            this.versionInfo = versionInfo == null ?
-                    versionFromObject(result) : versionInfo;
+            this.artifact = method == null || method.getArtifact() == null ?
+                    ProxyUtils.versionFromObject(result) : method.getArtifact();
         }
 
         @Override
         public String getName() {
-            return versionInfo.getName();
+            return artifact.getVersion().getName();
         }
 
         @Override
         public String getLabel() {
-            return this.versionInfo.getLabel();
+            return this.artifact.getVersion().getLabel();
         }
 
         @Override
         public String getPath() {
-            return this.versionInfo.getPath();
+            return this.artifact.getVersion().getPath();
         }
 
         @Override
         public String getVersion() {
-            return this.versionInfo.getVersion();
+            return this.artifact.getVersion().getVersion();
+        }
+
+        @Override
+        public File getDir() {
+            return this.artifact.getVersion().getDir();
         }
 
         public Object getResult() {
             return result;
         }
 
-        public MethodDesriptor getDesriptor() {
-            return desriptor;
+        public Result rerun(ProxyUtils.ProxyObject ... params) {
+            if (this.method == null) {
+                return new Result(method, null);
+            } else {
+                return this.method.makeCall(params);
+            }
+        }
+
+        public CachedMethod getMethod() {
+            return this.method;
         }
 
         public Long asLong() {
@@ -210,12 +210,7 @@ public class MethodDesriptor implements ProxyInterface {
                 return ImmutableList.of();
             } else if (this.result instanceof Iterable) {
                 return FluentIterable.<ProxyCallerInterface>from((Iterable) this.result)
-                        .transform(new Function<Object, ProxyCallerInterface>() {
-                            @Override
-                            public ProxyCallerInterface apply(Object input) {
-                                return new ProxyCaller(unwrapObject(input), versionInfo);
-                            }
-                        })
+                        .transform((Function<Object, ProxyCallerInterface>) input -> new ProxyCaller(ProxyUtils.unwrapObject(input), artifact))
                         .toList();
             }
 
@@ -232,24 +227,24 @@ public class MethodDesriptor implements ProxyInterface {
         }
 
         public static String toString(Object runtimeObject) {
-            return new ProxyCaller(unwrapObject(runtimeObject),
-                    fromObject(runtimeObject)).call("toString").asString();
+            return new ProxyCaller(ProxyUtils.unwrapObject(runtimeObject),
+                    ProxyUtils.fromObject(runtimeObject)).call("toString").asString();
         }
 
         public ProxyEnum asEnum() {
             if (this.result == null) {
-                return new ProxyEnum(null, this);
+                return new ProxyEnum(null, this.artifact);
             }
 
-            return new ProxyEnum(unwrapObject(this.result), this);
+            return new ProxyEnum(ProxyUtils.unwrapObject(this.result), this.artifact);
         }
 
         public ProxyCallerInterface asProxy() {
             if (this.result == null) {
-                return new ProxyCaller(null, this.versionInfo);
+                return new ProxyCaller(null, this.artifact);
             }
 
-            return new ProxyCaller(unwrapObject(this.result), this.versionInfo);
+            return new ProxyCaller(ProxyUtils.unwrapObject(this.result), this.artifact);
         }
 
         public boolean sameAs(ProxyCallerInterface other) {
@@ -321,12 +316,7 @@ public class MethodDesriptor implements ProxyInterface {
     @Override
     public int hashCode() {
         int sig = Objects.hashCode((Object[]) FluentIterable.of(signature)
-                .transform(new Function<Class, String>() {
-                    @Override
-                    public String apply(Class input) {
-                        return input.getName();
-                    }
-                }).toArray(String.class));
+                .transform(input -> input.getName()).toArray(String.class));
 
         return Objects.hashCode(name, is_static, sig);
     }

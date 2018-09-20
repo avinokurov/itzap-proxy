@@ -1,4 +1,6 @@
-package org.integration.proxy;
+package net.proxy;
+
+import net.proxy.model.ArtifactInterface;
 
 public interface ProxyCallerInterface extends ProxyVersionedInterface {
     MethodDesriptor.Result call(String name);
@@ -11,4 +13,5 @@ public interface ProxyCallerInterface extends ProxyVersionedInterface {
     Class myClass();
     boolean isInstanceOf(String name);
     boolean isNull();
+    ArtifactInterface getArtifact();
 }

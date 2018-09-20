@@ -1,26 +1,32 @@
-package org.integration.proxy.utils;
+package net.proxy.utils;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import net.proxy.ProxyException;
+import net.proxy.ProxyUtils;
+import net.proxy.model.ArtifactInterface;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.integration.proxy.utils.jar.ArtifactInterface;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-import static org.integration.proxy.utils.LibUtils.APPEND_LIB_LOG;
-import static org.integration.proxy.utils.jar.JarUtils.getUrlFromClass;
+import static net.proxy.utils.JarUtils.getJarFile;
 
 
 public class LibLoader {
@@ -28,24 +34,30 @@ public class LibLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(LibLoader.class);
 
     public static URLClassLoader getLibClassLoader(ArtifactInterface lib) {
-        return getLibClassLoader(lib, jarPredicate(lib.getRoot(), lib.getName(), lib.getPredicate()));
+        return getLibClassLoader(lib, jarPredicate(lib.getRoot(),
+                lib.getName(), lib.getExtensions(), lib.getPredicate()));
     }
 
     public static boolean containsLoader(String lib) {
+        if (StringUtils.isBlank(lib)) {
+            return false;
+        }
+
         return LIB_CLASS_LOADER.containsKey(lib);
     }
 
     public static URLClassLoader getLibClassLoader(ArtifactInterface lib, Predicate<String> filter) {
-        if (!LIB_CLASS_LOADER.containsKey(lib.getName())) {
+        String libName = lib.getName();
+        if (!LIB_CLASS_LOADER.containsKey(libName)) {
             synchronized (LibLoader.class) {
-                if (!LIB_CLASS_LOADER.containsKey(lib.getName())) {
-                    LIB_CLASS_LOADER.put(lib.getName(), loadLibs(lib,
+                if (!LIB_CLASS_LOADER.containsKey(libName)) {
+                    LIB_CLASS_LOADER.put(libName, loadLibs(lib,
                             ObjectUtils.defaultIfNull(filter, lib.getPredicate())));
                 }
             }
         }
 
-        return LIB_CLASS_LOADER.get(lib.getName());
+        return LIB_CLASS_LOADER.get(libName);
     }
 
     public static void unloadAll() {
@@ -53,20 +65,16 @@ public class LibLoader {
     }
 
     private static URLClassLoader loadLibs(ArtifactInterface artifact, Predicate<String> filter) {
-        System.setProperty(APPEND_LIB_LOG, "true");
-
         List<URL> urls = null;
         try {
             ArtifactInterface currentArtifact = artifact;
-            Predicate<String> curFilter = currentArtifact == null ? filter :
-                    ObjectUtils.defaultIfNull(filter, currentArtifact.getPredicate());
             while(currentArtifact != null) {
-                urls = currentArtifact.loadUrls();
+                urls = currentArtifact.load();
+
                 if ((urls == null || urls.isEmpty()) &&
-                        currentArtifact.getFallback() != null) {
-                    LOGGER.info("Fallback to {}", currentArtifact.getFallback());
+                        currentArtifact.hasFallback()) {
                     currentArtifact = currentArtifact.getFallback();
-                    curFilter = currentArtifact.getPredicate();
+                    LOGGER.info("Fallback to {}", currentArtifact);
                 } else {
                     break;
                 }
@@ -111,7 +119,7 @@ public class LibLoader {
                 .transform(new Function<Class, URL>() {
                     @Override
                     public URL apply(Class input) {
-                        return getUrlFromClass(input);
+                        return ProxyUtils.getUrlFromClass(input);
                     }
                 })
                 .filter(new Predicate<URL>() {
@@ -124,13 +132,15 @@ public class LibLoader {
     }
 
     public static Predicate<String> jarPredicate(final String root,
-                                                 final String lib) {
-        return jarPredicate(root, lib, null);
+                                                 final String lib,
+                                                 Set<String> extentions) {
+        return jarPredicate(root, lib, extentions, null);
     }
 
     private static Predicate<String> jarPredicate(final String root,
-                                                 final String lib,
-                                                 Predicate<String> defaultPredicate) {
+                                                  final String lib,
+                                                  final Set<String> extentions,
+                                                  Predicate<String> defaultPredicate) {
         if (defaultPredicate != null) {
             return defaultPredicate;
         }
@@ -138,23 +148,80 @@ public class LibLoader {
         return new Predicate<String>() {
             @Override
             public boolean apply(String input) {
-                return isKeepArtifact(root, lib, input);
+                return isKeepArtifact(root, lib, input, extentions);
             }
         };
     }
 
-    public static boolean isKeepArtifact(String root, String lib, String input) {
+    public static boolean isKeepArtifact(String root,
+                                         String lib,
+                                         String input,
+                                         Set<String> extentions) {
         String testInput = FilenameUtils.separatorsToUnix(input);
         String testPath = FilenameUtils.separatorsToUnix(Joiner.on('/')
                 .skipNulls().join(root, lib));
-        String testRuntime = FilenameUtils.separatorsToUnix(root + "/runtime/");
+        String testRuntime = StringUtils.isBlank(root) ? FilenameUtils.separatorsToUnix("runtime/") :
+                FilenameUtils.separatorsToUnix(root + "/runtime/");
 
 
         LOGGER.debug("Testing input {} for {} or runtime {}",
                     testInput, testPath, testRuntime);
 
+        String ext = FilenameUtils.getExtension(input);
         return (StringUtils.containsIgnoreCase(testInput, testPath) &&
-                StringUtils.endsWithIgnoreCase(input, ".jar")) ||
+                extentions.contains(ext)) ||
                 StringUtils.containsIgnoreCase(testInput, testRuntime);
+    }
+
+    public static List<URL> loadArtifactFromDir(final ArtifactInterface artifact, final Predicate<String> filter) {
+        LOGGER.debug("Loading DIR artifact {}", artifact);
+
+        final String jarName = getJarFile(artifact.getClass());
+        File libDir = artifact.toPath();
+        File targetLibDir = artifact.toParentPath();
+
+        if ((!libDir.exists() || !libDir.isDirectory()) && !targetLibDir.exists()) {
+            LOGGER.warn("Artifact='{}' is not found. Application may not function properly", artifact);
+            return ImmutableList.of();
+        }
+
+        File[] libJarFiles = libDir.listFiles();
+        File[] targetLibJars = targetLibDir.listFiles();
+
+        if (ArrayUtils.isEmpty(libJarFiles) && ArrayUtils.isEmpty(targetLibJars)) {
+            LOGGER.warn("No files found in {}. Application may not function properly",
+                    libDir.getAbsolutePath());
+            return ImmutableList.of();
+        }
+
+        File[] allFiles = ArrayUtils.addAll(libJarFiles, targetLibJars);
+        try {
+            return FluentIterable.of(allFiles)
+                    .filter(new Predicate<File>() {
+                        @Override
+                        public boolean apply(File input) {
+                            return input != null &&
+                                    input.exists() &&
+                                    "jar".equalsIgnoreCase(FilenameUtils.getExtension(input.getName())) &&
+                                    filter.apply(input.getAbsolutePath());
+                        }
+                    })
+                    .transform(new Function<File, URL>() {
+                        @Override
+                        public URL apply(File jarFile) {
+                            try {
+                                LOGGER.info("Adding file {}", jarFile.getAbsolutePath());
+                                return jarFile.toURI().toURL();
+                            } catch (MalformedURLException e) {
+                                throw new ProxyException(artifact, String.format("Failed to get URL from a jar file=%s",
+                                        jarFile.getAbsolutePath()));
+                            }
+                        }
+                    }).toList();
+        } catch (Exception e) {
+            LOGGER.warn("Failed to load artifacts from dir {}. Application may not function properly",
+                    libDir.getAbsolutePath(), e);
+            return ImmutableList.of();
+        }
     }
 }
