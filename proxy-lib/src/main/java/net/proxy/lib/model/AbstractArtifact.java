@@ -6,6 +6,8 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import net.proxy.lib.ProxyVersionedInterface;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.net.URL;
@@ -20,8 +22,8 @@ public abstract class AbstractArtifact implements ArtifactInterface {
             UNKNOWN_VALUE,
             ImmutableSet.of(),
             AbstractArtifact.class,
-    null,
-    null,
+            null,
+            null,
             UNKNOWN_VERSION) {
         @Override
         public SourceType getSourceType() {
@@ -64,11 +66,13 @@ public abstract class AbstractArtifact implements ArtifactInterface {
                             File destination,
                             Predicate<String> predicate,
                             ProxyVersionedInterface versionInfo) {
-        this.root = root;
-        this.name = name;
-        this.extensions = extensions;
+        versionInfo = ObjectUtils.defaultIfNull(versionInfo, UNKNOWN_VERSION);
+
+        this.root = StringUtils.defaultIfBlank(root, versionInfo.getPath());
+        this.name = StringUtils.defaultIfBlank(name, versionInfo.getName());
+        this.extensions = ObjectUtils.defaultIfNull(extensions, ImmutableSet.of("jar"));
         this.clazz = clazz;
-        this.destination = destination;
+        this.destination = ObjectUtils.defaultIfNull(destination, versionInfo.getDir());
         this.predicate = predicate;
         this.versionInfo = versionInfo;
     }
@@ -163,5 +167,54 @@ public abstract class AbstractArtifact implements ArtifactInterface {
     @Override
     public ProxyVersionedInterface getVersion() {
         return this.versionInfo;
+    }
+
+    public static abstract class Builder<T extends AbstractArtifact, B extends Builder> {
+        String root;
+        String name;
+        Set<String> extensions;
+        Class<?> clazz;
+        File destination;
+        Predicate<String> predicate;
+        ProxyVersionedInterface versionInfo;
+
+        protected abstract B getThis();
+
+        public abstract T build();
+
+        public B withRoot(String root) {
+            this.root = root;
+            return getThis();
+        }
+
+        public B withName(String name) {
+            this.name = name;
+            return getThis();
+        }
+
+        public B withExtensions(Set<String> extensions) {
+            this.extensions = extensions;
+            return getThis();
+        }
+
+        public B withClazz(Class<?> clazz) {
+            this.clazz = clazz;
+            return getThis();
+        }
+
+        public B withDestination(File destination) {
+            this.destination = destination;
+            return getThis();
+        }
+
+        public B withPredicate(Predicate<String> predicate) {
+            this.predicate = predicate;
+            return getThis();
+        }
+
+        public B withVersionInfo(ProxyVersionedInterface versionInfo) {
+            this.versionInfo = versionInfo;
+            return getThis();
+        }
     }
 }

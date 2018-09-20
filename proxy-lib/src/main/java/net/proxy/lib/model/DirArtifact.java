@@ -10,23 +10,9 @@ import java.util.List;
 import java.util.Set;
 
 public class DirArtifact extends AbstractArtifact {
-    public DirArtifact(Set<String> extensions,
-                       Class<?> clazz,
-                       Predicate<String> predicate,
-                       ProxyVersionedInterface versionInfo) {
-        this(versionInfo.getPath(),
-                versionInfo.getName(), extensions, clazz, versionInfo.getDir(),
-                predicate, versionInfo);
-    }
-
-    public DirArtifact(String root,
-                       String name,
-                       Set<String> extensions,
-                       Class<?> clazz,
-                       File destination,
-                       Predicate<String> predicate,
-                       ProxyVersionedInterface versionInfo) {
-        super(root, name, extensions, clazz, destination, predicate, versionInfo);
+    private DirArtifact(Builder builder) {
+        super(builder.root, builder.name, builder.extensions, builder.clazz,
+                builder.destination, builder.predicate, builder.versionInfo);
     }
 
     @Override
@@ -52,5 +38,22 @@ public class DirArtifact extends AbstractArtifact {
     @Override
     public String getLabel() {
         return getVersion().getLabel();
+    }
+
+    public static class Builder extends AbstractArtifact.Builder<DirArtifact, Builder> {
+
+        @Override
+        protected Builder getThis() {
+            return this;
+        }
+
+        @Override
+        public DirArtifact build() {
+            return new DirArtifact(this);
+        }
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 }
