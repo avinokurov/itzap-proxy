@@ -276,16 +276,17 @@ public final class ProxyUtils {
 
     public static ArtifactInterface artifactFromClass(final Class clazz) {
         final URL location = getUrlFromClass(clazz);
-
         try {
             if (location != null) {
                 final File jarFile = new File(location.toURI());
                 String ext = FilenameUtils.getExtension(jarFile.getAbsolutePath());
+                String label;
                 Set<String> extentions = ImmutableSet.of(ext);
                 if ("jar".equalsIgnoreCase(ext)) {
-                    File libFolder = libFolderFromPath(jarFile).getParentFile().getParentFile();
+                    label = getVersion(jarFile.getParentFile().getParentFile());
+                    File libFolder = libFolderFromPath(jarFile, label);
 
-                    ProxyVersionedInterface version = newVersionInfo(getVersion(jarFile.getParentFile().getParentFile()),
+                    ProxyVersionedInterface version = newVersionInfo(label,
                             getVersion(jarFile), libFolder);
 
                     return new DirArtifact(extentions,
@@ -293,10 +294,12 @@ public final class ProxyUtils {
                             libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
                             version);
                 } else {
-                    File libFolder = libFolderFromPath(jarFile).getParentFile();
+                    label = getVersion(jarFile.getParentFile());
+                    File libFolder = libFolderFromPath(jarFile, label).getParentFile();
 
                     ProxyVersionedInterface version = newVersionInfo(getVersion(jarFile.getParentFile()),
                             getVersion(jarFile), libFolder);
+
                     return new DirArtifact(extentions,
                             clazz, jarPredicate(location.toURI().getPath(),
                             libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
@@ -311,15 +314,19 @@ public final class ProxyUtils {
         }
     }
 
-    private static File libFolderFromPath(File path) {
+    private static File libFolderFromPath(File path, String label) {
+        if (StringUtils.isBlank(label)) {
+            return path;
+        }
+
         String folder = getVersion(path);
         File fromPath = path;
 
-        while(fromPath != null && !"lib".equalsIgnoreCase(folder)) {
+        while(fromPath != null && !label.equalsIgnoreCase(folder)) {
             fromPath = fromPath.getParentFile();
             folder = getVersion(fromPath);
         }
-        return fromPath == null ? path : fromPath;
+        return fromPath == null ? path : fromPath.getParentFile();
     }
 
     public static String getPath(ProxyVersionedInterface versionInfo) {
@@ -354,12 +361,12 @@ public final class ProxyUtils {
         return versionInfo.getLabel() + "/" + versionInfo.getVersion();
     }
 
-    public static String getS3Path(ProxyVersionedInterface versionInfo) {
+    public static String getS3Path(String root, ProxyVersionedInterface versionInfo) {
         if (versionInfo == UNKNOWN_VERSION || versionInfo == null) {
             return UNKNOWN_VALUE;
         }
 
-        String path = "engine";
+        String path = root;
 
         if (StringUtils.isNotBlank(versionInfo.getLabel())) {
             path += ("/" + versionInfo.getLabel());
