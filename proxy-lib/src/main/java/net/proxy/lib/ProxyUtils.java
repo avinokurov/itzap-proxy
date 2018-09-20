@@ -86,6 +86,11 @@ public final class ProxyUtils {
         }
     };
 
+    public static ProxyVersionedInterface newVersionInfo(final File libDir) {
+        return newVersionInfo(FilenameUtils.getBaseName(libDir.getAbsolutePath()),
+                getVersion(libDir), libDir, UNKNOWN_VALUE);
+    }
+
     public static ProxyVersionedInterface newVersionInfo(final String label,
                                                          final String version,
                                                          final File libDir) {
@@ -282,6 +287,10 @@ public final class ProxyUtils {
                 String ext = FilenameUtils.getExtension(jarFile.getAbsolutePath());
                 String label;
                 Set<String> extentions = ImmutableSet.of(ext);
+                DirArtifact.Builder builder = DirArtifact.builder()
+                        .withExtensions(extentions)
+                        .withClazz(clazz);
+
                 if ("jar".equalsIgnoreCase(ext)) {
                     label = getVersion(jarFile.getParentFile().getParentFile());
                     File libFolder = libFolderFromPath(jarFile, label);
@@ -289,10 +298,11 @@ public final class ProxyUtils {
                     ProxyVersionedInterface version = newVersionInfo(label,
                             getVersion(jarFile), libFolder);
 
-                    return new DirArtifact(extentions,
-                            clazz, jarPredicate(location.toURI().getPath(),
-                            libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
-                            version);
+                    return builder
+                            .withPredicate(jarPredicate(location.toURI().getPath(),
+                                    libFolder.getAbsoluteFile().getAbsolutePath(), extentions))
+                            .withVersionInfo(version)
+                            .build();
                 } else {
                     label = getVersion(jarFile.getParentFile());
                     File libFolder = libFolderFromPath(jarFile, label).getParentFile();
@@ -300,10 +310,11 @@ public final class ProxyUtils {
                     ProxyVersionedInterface version = newVersionInfo(getVersion(jarFile.getParentFile()),
                             getVersion(jarFile), libFolder);
 
-                    return new DirArtifact(extentions,
-                            clazz, jarPredicate(location.toURI().getPath(),
-                            libFolder.getAbsoluteFile().getAbsolutePath(), extentions),
-                            version);
+                    return builder
+                            .withPredicate(jarPredicate(location.toURI().getPath(),
+                                    libFolder.getAbsoluteFile().getAbsolutePath(), extentions))
+                            .withVersionInfo(version)
+                            .build();
                 }
             } else {
                 return AbstractArtifact.UKNOWN_ARTIFACT;
