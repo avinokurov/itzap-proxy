@@ -176,7 +176,6 @@ public class LibLoader {
     public static List<URL> loadArtifactFromDir(final ArtifactInterface artifact, final Predicate<String> filter) {
         LOGGER.debug("Loading DIR artifact {}", artifact);
 
-        final String jarName = getJarFile(artifact.getClass());
         File libDir = artifact.toPath();
         File targetLibDir = artifact.toParentPath();
 

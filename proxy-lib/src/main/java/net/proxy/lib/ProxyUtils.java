@@ -87,8 +87,11 @@ public final class ProxyUtils {
     };
 
     public static ProxyVersionedInterface newVersionInfo(final File libDir) {
-        return newVersionInfo(FilenameUtils.getBaseName(libDir.getAbsolutePath()),
-                getVersion(libDir), libDir, UNKNOWN_VALUE);
+        String version = getVersion(libDir);
+        File libFolder = libFolderFromPath(libDir, version);
+
+        return newVersionInfo(FilenameUtils.getBaseName(libFolder.getAbsolutePath()),
+                version, libFolder.getParentFile(), UNKNOWN_VALUE);
     }
 
     public static ProxyVersionedInterface newVersionInfo(final String label,

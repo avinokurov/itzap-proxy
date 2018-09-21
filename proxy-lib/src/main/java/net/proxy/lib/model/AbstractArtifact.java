@@ -146,7 +146,11 @@ public abstract class AbstractArtifact implements ArtifactInterface {
     }
 
     protected String getPath() {
-        return this.root + "/" + this.name;
+        if (StringUtils.isNotBlank(this.name) && !UNKNOWN_VALUE.equalsIgnoreCase(this.name)) {
+            return this.root + "/" + this.name;
+        } else {
+            return this.root;
+        }
     }
 
     @Override

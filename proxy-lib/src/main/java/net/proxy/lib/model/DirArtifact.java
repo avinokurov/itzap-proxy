@@ -1,18 +1,25 @@
 package net.proxy.lib.model;
 
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableSet;
 import net.proxy.lib.ProxyVersionedInterface;
 import net.proxy.lib.utils.LibLoader;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.net.URL;
 import java.util.List;
 import java.util.Set;
 
+import static net.proxy.lib.utils.LibLoader.jarPredicate;
+
 public class DirArtifact extends AbstractArtifact {
     private DirArtifact(Builder builder) {
-        super(builder.root, builder.name, builder.extensions, builder.clazz,
-                builder.destination, builder.predicate, builder.versionInfo);
+        super(builder.root,
+                builder.name, builder.extensions, builder.clazz,
+                builder.destination,
+                builder.predicate, builder.versionInfo);
     }
 
     @Override
@@ -49,6 +56,12 @@ public class DirArtifact extends AbstractArtifact {
 
         @Override
         public DirArtifact build() {
+            this.root = StringUtils.defaultIfBlank(this.root, this.versionInfo.getDir().getAbsolutePath());
+            this.name = StringUtils.defaultIfBlank(this.name, this.versionInfo.getPath());
+            this.extensions = ObjectUtils.defaultIfNull(this.extensions, ImmutableSet.of("jar"));
+
+            this.predicate = ObjectUtils.defaultIfNull(this.predicate, jarPredicate(this.root, this.name, this.extensions));
+
             return new DirArtifact(this);
         }
     }
