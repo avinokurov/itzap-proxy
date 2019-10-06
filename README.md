@@ -1,4 +1,4 @@
-# proxy-object
+# itzap-proxy
 Load java jar files dynamically in isolated class loader to avoid dependency conflicts and enable modular updates. All jar files in the [main jar folder]/lib/myLib/2.0/*.jar will be loaded.
 ## Code Examples
 1. Create Object from a JAR file located in the myLib/2.0 folder:
